@@ -1,0 +1,2 @@
+python3 scripts/parse_checklist.py "$(cat PR_Templates/PR_Template.MD)"
+python3 scripts/generate_review_files.py '{"Checklist 1:": false, "Pruebas 2:": true, "Erc lista:": false}' 'items/123.erc.json items/1234.erc.json' 'https://github.com/ejemplo/repo/pull/123'

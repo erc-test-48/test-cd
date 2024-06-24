@@ -1,0 +1,71 @@
+name: Create JSON
+
+# Target branches: https://stackoverflow.com/questions/66495323/github-actions-pull-request-review-on-a-specific-target-branch
+# Trigger on approved https://github.com/orgs/community/discussions/25372 
+# PR body: https://stackoverflow.com/questions/71688092/how-to-get-the-title-of-a-pull-request-with-github-actions
+# Slack bot: https://github.com/slackapi/slack-github-action/blob/main/.github/workflows/main.yml
+# Trigger conditions OR: https://stackoverflow.com/questions/70438914/trigger-a-github-action-on-pull-request-approval-and-path
+
+on:
+  pull_request_review:
+    branches: ["main"]
+    types: [submitted]
+
+jobs:
+  reviewerFile:
+    if: github.event.review.state == 'approved' &&
+        (startsWith(github.event.pull_request.base.ref, 'test/**') || github.event.pull_request.base.ref == 'main')
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.11
+
+    - name: Filter JSON
+      id: filter_json
+      run: |
+        git diff --name-only origin/${{ github.event.pull_request.base.ref }} HEAD
+        MODIFIED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} HEAD | grep -E '\w+\.\w+\.json')
+        MODIFIED_FILES=$(echo "$MODIFIED_FILES" | tr '\n' ' ')
+        echo "MODIFIED_FILES=$MODIFIED_FILES" >> $GITHUB_ENV
+        
+    - name: Retrieve status
+      id: parse
+      run: |
+        STATUS=$(python ./scripts/parse_checklist.py "$BODY")
+        echo "$STATUS"
+        echo "CHECKLIST_STATUS=$STATUS" >> $GITHUB_ENV
+      env:
+        BODY: ${{ github.event.pull_request.body }}
+
+    - name: Generate review files
+      id: generate_rev
+      run: |
+        python ./scripts/generate_files.py "$STATUS" "$MODIFIED_FILES" "$PR_URL"
+      env:
+        CHECKLIST_STATUS: ${{ env.STATUS }}
+        MODIFIED_FILES: ${{ env.MODIFIED_FILES }}
+        PR_URL: ${{ github.event.pull_request.html_url }}
+
+    - name: Commit and push JSON file
+      id: Commit_files
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add --all
+        if git diff --cached --quiet; then
+          echo "No changes to commit."
+        else
+          git commit -m 'Add files'
+          git push origin HEAD:refs/heads/${{ github.event.pull_request.head.ref }}
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
